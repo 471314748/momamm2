@@ -6,7 +6,7 @@
 行  el-row
 栏  el-col   多少栏  :span="5"  offset偏移
       -->
-      <el-form :model="form" label-width="80px">
+      <el-form :model="form" label-width="80px" ref="form">
         <el-row>
           <el-col :span="5">
             <el-form-item label="学科" prop="subject">
@@ -28,7 +28,7 @@
                   v-for="(value,key,index) in stepObj"
                   :key="index"
                   :label="value"
-                  :value="key"
+                  :value="+key"
                 ></el-option>
                 <!-- <el-option label="初级" value="1"></el-option>
                 <el-option label="中级" value="2"></el-option>
@@ -105,14 +105,14 @@
             <!-- label-width 设置el-form-item上的标题宽度（当自己身上有label-width是优先听从自己的） -->
             <el-form-item label-width="10px">
               <el-button type="primary" @click="search">搜索</el-button>
-              <el-button>清除</el-button>
-              <el-button type="primary">+新增试题</el-button>
+              <el-button @click="reset">清除</el-button>
+              <el-button type="primary" @click="add">+新增试题</el-button>
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
     </el-card>
-    <el-card>
+    <el-card class="content">
       <!-- 
     el-table   data绑定整个表格的数据   border边框，它是一个boolean值   width 宽度
        el-table-column  栏   label标题  width设置宽度   prop绑定该栏对应的字段名
@@ -121,8 +121,11 @@
   
       -->
       <el-table :data="tableData" :border="true">
-        <el-table-column label="序号">
-          <template slot-scope="scope">{{scope.$index+1}}</template>
+        <el-table-column label="序号" width="50px">
+          <!-- (当前页码-1)*页容量+$index+1 -->
+          <template
+            slot-scope="scope"
+          >{{(pagination.currentPage-1)*pagination.pageSize+scope.$index+1}}</template>
         </el-table-column>
         <el-table-column label="题目">
           <template slot-scope="scope">
@@ -135,15 +138,15 @@
           有什么解决方法  对象[]语法 它没有变量命名的限制 规则
           -->
         </el-table-column>
-        <el-table-column label="题型">
+        <el-table-column label="题型" width="50px">
           <template slot-scope="scope">{{typeObj[scope.row.type]}}</template>
         </el-table-column>
         <el-table-column label="企业" prop="enterprise_name"></el-table-column>
-        <el-table-column label="创建者" prop="username"></el-table-column>
+        <el-table-column label="创建者" prop="username" width="150px"></el-table-column>
         <el-table-column label="状态">
           <template slot-scope="scope">{{scope.row.status==0?'禁用':'启用'}}</template>
         </el-table-column>
-        <el-table-column label="访问量" prop="reads"></el-table-column>
+        <el-table-column label="访问量" prop="reads" width="90px"></el-table-column>
         <el-table-column label="操作" width="280px">
           <template slot-scope="scope">
             <!-- 编辑编辑的是整行数据 -->
@@ -155,29 +158,62 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination">
+        <el-pagination
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+          :current-page="pagination.currentPage"
+          :page-sizes="[5, 200, 300, 400,500,600]"
+          :page-size="pagination.pageSize"
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="pagination.total"
+        ></el-pagination>
+      </div>
     </el-card>
+    <!-- 
+      父传子数据   props
+      1:在子组件标签上定义一个属性   属性名=值
+      2：在子组件上获取该属性值   props:['属性名']
+    -->
+    <addQuestion
+      ref="addQuestion"
+      :subjectData="subjectData"
+      :stepObj="stepObj"
+      :businessData="businessData"
+    ></addQuestion>
   </div>
 </template>
 <script>
 import { getSubjectData } from "@/api/subject.js";
 import { getBusinessDate } from "@/api/business.js";
 import { getQuestionData } from "@/api/question.js";
+import addQuestion from "./addQuestion.vue";
 export default {
+  components: {
+    addQuestion
+  },
   data() {
     return {
-      form: {
-        title: "",
-        subject: "",
-        enterprise: "",
-        type: "",
-        step: "",
-        username: "",
-        status: "",
-        difficulty: "",
-        create_date: ""
+      // 分页信息
+      pagination: {
+        currentPage: 1, //当前页
+        pageSize: 5, //页容量
+        total: 10 //总数
       },
-      stepObj: { 1: "初级", 2: "中级", 3: "高级" },
-      typeObj: { 1: "单选", 2: "多选", 3: "简答" },
+      // 搜索表单信息
+      form: {
+        title: "", //标题
+        subject: "", // 学科
+        enterprise: "", //企业
+        type: "", //类型
+        step: "", //阶段
+        username: "", //创建者
+        status: "", //状态
+        difficulty: "", //难度
+        create_date: "" //创建时间
+      },
+      stepObj: { 1: "初级", 2: "中级", 3: "高级" }, //阶段
+      typeObj: { 1: "单选", 2: "多选", 3: "简答" }, //类型
       subjectData: [], //学科列表数据
       businessData: [], //企业列表数据
       tableData: [] //题库列表数据
@@ -195,16 +231,55 @@ export default {
   methods: {
     // 获取题库列表
     getData() {
-      getQuestionData().then(res => {
+      let _query = {
+        page: this.pagination.currentPage,
+        limit: this.pagination.pageSize,
+        ...this.form
+      };
+      getQuestionData(_query).then(res => {
         window.console.log("题库列表数据:", res);
         this.tableData = res.data.items;
+        //赋值给total
+        this.pagination.total = res.data.pagination.total;
       });
     },
+    //页容量改变
+    handleSizeChange(size) {
+      this.pagination.pageSize = size;
+      this.search();
+    },
+    //页码改变
+    handleCurrentChange(page) {
+      this.pagination.currentPage = page;
+      this.getData();
+    },
+    //搜索
     search() {
       window.console.log("所有数据:", this.form);
+      this.pagination.currentPage = 1;
+      this.getData();
+    },
+    // 清除
+    reset() {
+      // 1：清空表单数据   2：调用search
+      this.$refs.form.resetFields();
+      this.search();
+    },
+    //新增
+    add() {
+      this.$refs.addQuestion.dialogVisible = true;
     }
   }
 };
 </script>
-<style>
+<style lang="less">
+.question {
+  .content {
+    margin-top: 20px;
+  }
+  .pagination {
+    text-align: center;
+    margin-top: 20px;
+  }
+}
 </style>
