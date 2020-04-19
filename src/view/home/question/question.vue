@@ -69,9 +69,15 @@
           <el-col :span="5">
             <el-form-item label="难度" prop="difficulty">
               <el-select placeholder="请选择难度" v-model="form.difficulty">
-                <el-option label="简单" :value="1"></el-option>
+                <el-option
+                  v-for="(value,key,index) in difficultyObj"
+                  :key="index"
+                  :label="value"
+                  :value="+key"
+                ></el-option>
+                <!-- <el-option label="简单" :value="1"></el-option>
                 <el-option label="一般" :value="2"></el-option>
-                <el-option label="困难" :value="3"></el-option>
+                <el-option label="困难" :value="3"></el-option>-->
               </el-select>
             </el-form-item>
           </el-col>
@@ -150,11 +156,12 @@
         <el-table-column label="操作" width="280px">
           <template slot-scope="scope">
             <!-- 编辑编辑的是整行数据 -->
-            <el-button>编辑</el-button>
+            <el-button @click="edit(scope.row)">编辑</el-button>
             <el-button
               :type="scope.row.status==1?'info':'success'"
+              @click="setStatus(scope.row.id)"
             >{{scope.row.status==0?'启用':'禁用'}}</el-button>
-            <el-button>删除</el-button>
+            <el-button @click="del(scope.row.id)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -180,13 +187,20 @@
       :subjectData="subjectData"
       :stepObj="stepObj"
       :businessData="businessData"
+      :typeObj="typeObj"
+      :difficultyObj="difficultyObj"
+      :mode="mode"
     ></addQuestion>
   </div>
 </template>
 <script>
 import { getSubjectData } from "@/api/subject.js";
 import { getBusinessDate } from "@/api/business.js";
-import { getQuestionData } from "@/api/question.js";
+import {
+  getQuestionData,
+  setQuestionStatus,
+  delQuestionData
+} from "@/api/question.js";
 import addQuestion from "./addQuestion.vue";
 export default {
   components: {
@@ -194,6 +208,7 @@ export default {
   },
   data() {
     return {
+      mode: "add",
       // 分页信息
       pagination: {
         currentPage: 1, //当前页
@@ -214,6 +229,7 @@ export default {
       },
       stepObj: { 1: "初级", 2: "中级", 3: "高级" }, //阶段
       typeObj: { 1: "单选", 2: "多选", 3: "简答" }, //类型
+      difficultyObj: { 1: "简单", 2: "一般", 3: "困难" }, //难度
       subjectData: [], //学科列表数据
       businessData: [], //企业列表数据
       tableData: [] //题库列表数据
@@ -239,6 +255,21 @@ export default {
       getQuestionData(_query).then(res => {
         window.console.log("题库列表数据:", res);
         this.tableData = res.data.items;
+        //在这里就转，在源头上搞定
+        /*
+        forEach   数组的循环释遍历
+        数组.forEach((item,index)=>{
+          它可以循环处理数组内全部数据，能改变源数组，
+          但是它的循环根本停不下来（加return它都不会停下来），
+          它没有返回值，返回值为undefined
+        })        
+        */
+
+        this.tableData.forEach(item => {
+          item.city = item.city.split(",");
+          item.multiple_select_answer = item.multiple_select_answer.split(",");
+        });
+
         //赋值给total
         this.pagination.total = res.data.pagination.total;
       });
@@ -267,6 +298,82 @@ export default {
     },
     //新增
     add() {
+      // 1:修改mode为add
+      this.mode = "add";
+      // 2:传递默认数据过去到form
+      this.$refs.addQuestion.form = {
+        subject: "", //学科
+        step: "", //阶段
+        enterprise: "", //企业
+        city: [], //城市
+        title: "", //标题
+        type: 1, //题型
+        difficulty: 1, //难度
+        single_select_answer: "", //单选答案
+        multiple_select_answer: [], //多选答案
+        short_answer: "", //简答答案
+        video: "", //解析视频地址
+        answer_analyze: "", //答案解析
+        remark: "", //试题备注
+        select_options: [
+          {
+            label: "A",
+            text: "狗不理",
+            image: ""
+          },
+          {
+            label: "B",
+            text: "猫不理",
+            image: ""
+          },
+          {
+            label: "C",
+            text: "麻花",
+            image: ""
+          },
+          {
+            label: "D",
+            text: "炸酱面",
+            image: ""
+          }
+        ]
+      };
+      // 3:打开弹框
+      this.$refs.addQuestion.dialogVisible = true;
+    },
+    // 设置状态
+    setStatus(id) {
+      setQuestionStatus({ id }).then(() => {
+        this.$message.success("设置状态成功");
+        this.getData();
+      });
+    },
+    //删除
+    del(id) {
+      //提醒一下
+      this.$confirm("您确定要删除此信息吗？", "友情提醒", {
+        confirmButtonText: "确定删除",
+        cancelButtonText: "取消删除",
+        type: "warning"
+      })
+        .then(() => {
+          //点击 确定的处理)
+          delQuestionData({ id }).then(() => {
+            this.$message.success("删除成功");
+            this.search();
+          });
+        })
+        .catch(() => {
+          //点击 取消的处理
+        });
+    },
+    //编辑
+    edit(row) {
+      window.console.log("整行数据:", row);
+      //将row的所有数据全部传递给新增组件form，同时还要修改mode为edit,打开新增组件弹框
+      this.mode = "edit";
+      //访问form表单
+      this.$refs.addQuestion.form = JSON.parse(JSON.stringify(row));
       this.$refs.addQuestion.dialogVisible = true;
     }
   }
